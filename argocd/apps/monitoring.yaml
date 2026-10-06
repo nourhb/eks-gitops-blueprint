@@ -1,0 +1,63 @@
+# Child app: observability stack straight from the upstream Helm chart.
+#
+# OWNERSHIP: terraform/monitoring.tf installs this same chart by default.
+# Use this child INSTEAD of the Terraform helm_release (delete one of them),
+# never both. Chart version is pinned to match the Terraform default.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/part-of: eks-gitops-blueprint
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 55.5.0
+    helm:
+      values: |
+        prometheus:
+          prometheusSpec:
+            retention: 15d
+            replicas: 1
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp3
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 50Gi
+        grafana:
+          persistence:
+            enabled: true
+            storageClassName: gp3
+            size: 10Gi
+        alertmanager:
+          alertmanagerSpec:
+            replicas: 1
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
