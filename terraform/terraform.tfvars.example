@@ -1,0 +1,22 @@
+# Copy this file to terraform.tfvars and fill in your values.
+#   cp terraform.tfvars.example terraform.tfvars
+
+project_name = "blueprint"
+aws_region   = "ca-central-1"
+environment  = "dev"
+
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["ca-central-1a", "ca-central-1b", "ca-central-1d"]
+
+kubernetes_version  = "1.29"
+node_instance_types = ["t3.medium"]
+node_desired_size   = 2
+node_min_size       = 1
+node_max_size       = 4
+
+# Single NAT gateway keeps the demo cheap (~$45/mo instead of ~$135/mo).
+enable_nat_gateway = true
+single_nat_gateway = true
+
+argocd_chart_version         = "5.51.6"
+alb_controller_chart_version = "1.7.1"
