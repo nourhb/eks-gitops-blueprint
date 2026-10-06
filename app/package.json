@@ -1,0 +1,1 @@
+{"author":"Nour El Houda Bouajila","dependencies":{"express":"^4.19.2"},"description":"Sample microservice deployed by the EKS GitOps Blueprint","engines":{"node":">=20"},"license":"MIT","main":"server.js","name":"eks-gitops-demo-app","scripts":{"start":"node server.js","test":"node --test tests/"},"version":"1.0.0"}
