@@ -1,0 +1,63 @@
+# Network policies for the demo-app namespace.
+#
+# Kubernetes is deny-nothing by default: any pod can talk to any pod. These
+# policies flip that to deny-by-default and then punch only the holes the
+# demo app needs:
+#   1. default-deny-all  — drops all ingress and egress in the namespace
+#   2. allow-dns-egress  — pods must resolve DNS (kube-system CoreDNS)
+#   3. allow-app-ingress — the ALB (target-type: ip) talks directly to pods
+#                          on port 3000, so ingress is opened on that port.
+#                          Tighten `from` to your VPC CIDR in production.
+#
+# Requires a CNI with NetworkPolicy support. The VPC CNI used by this
+# blueprint enforces NetworkPolicies natively.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: demo-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: demo-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-ingress
+  namespace: demo-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: eks-gitops-demo-app
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 3000
+          protocol: TCP
