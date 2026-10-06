@@ -1,0 +1,60 @@
+# -----------------------------------------------------------------------------
+# CD (GitOps) — update the image tag in the Kubernetes manifests.
+#
+# Pure GitOps: this workflow never touches the cluster. It commits the new
+# image tag back to kubernetes/deployment.yaml on main; Argo CD detects the
+# commit and syncs it to EKS automatically.
+#
+# Runs after the CI workflow completes successfully on main.
+# -----------------------------------------------------------------------------
+
+name: CD
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write   # needed to push the tag-bump commit
+
+jobs:
+  bump-image-tag:
+    name: Bump image tag in manifests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag from CI commit
+        id: tag
+        run: |
+          # CI tags images as v1.0.0-<short-sha> of the commit it built.
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "tag=v1.0.0-${SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Update deployment image tag
+        run: |
+          FILE="kubernetes/deployment.yaml"
+          NEW_TAG="${{ steps.tag.outputs.tag }}"
+          # Replace the tag portion of the image reference, keeping registry/repo intact.
+          sed -i -E "s#(image:[[:space:]]*[^:]+:)[^[:space:]'\"]+#\1${NEW_TAG}#" "$FILE"
+          echo "--- resulting image line ---"
+          grep -n "image:" "$FILE"
+
+      - name: Commit and push
+        run: |
+          git config user.name "gitops-bot"
+          git config user.email "gitops-bot@users.noreply.github.com"
+          git add kubernetes/deployment.yaml
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "deploy: bump demo-app image to ${{ steps.tag.outputs.tag }}"
+            git push origin main
+          fi
