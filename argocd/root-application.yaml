@@ -1,0 +1,58 @@
+# Argo CD — app-of-apps root Application.
+#
+# Apply this single file and Argo CD bootstraps everything else:
+#
+#   kubectl apply -f argocd/root-application.yaml
+#
+# The root app watches argocd/apps/ in git; each child Application below is
+# synced automatically. This is the GitOps-native way to manage platform
+# services: adding a new app = adding one YAML file, no cluster access needed.
+#
+# OWNERSHIP NOTE: terraform/ installs the platform charts (Argo CD itself,
+# monitoring, security) via Helm by default. The monitoring/security child
+# apps are the app-of-apps ALTERNATIVE — pick ONE manager per release:
+#   * keep Terraform managing them → delete argocd/apps/monitoring.yaml and
+#     argocd/apps/security.yaml, or
+#   * let Argo CD manage them → delete the matching helm_release blocks from
+#     terraform/monitoring.tf and terraform/security.tf.
+# Running both on the same release will cause sync fights. The demo-app
+# child is safe to use as-is (Terraform never touches workloads).
+#
+# Replace the repoURL with your own fork/clone URL in all three children.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/part-of: eks-gitops-blueprint
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # !!! Replace with your fork:
+    repoURL: https://github.com/nourhb/eks-gitops-blueprint.git
+    targetRevision: main
+    path: argocd/apps
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
