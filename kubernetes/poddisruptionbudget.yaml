@@ -1,0 +1,16 @@
+# PodDisruptionBudget for the demo app.
+#
+# Guarantees at least one replica stays available during voluntary
+# disruptions (node drains, Karpenter consolidation, cluster upgrades),
+# so rolling operations never take the app fully offline.
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: eks-gitops-demo-app
+  namespace: demo-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eks-gitops-demo-app
