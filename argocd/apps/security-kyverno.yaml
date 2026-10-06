@@ -1,0 +1,50 @@
+# Child app: Kyverno policy engine from the upstream Helm chart.
+#
+# OWNERSHIP: terraform/security.tf installs this same chart by default.
+# Use this child INSTEAD of the Terraform helm_release (delete one of
+# them), never both. Chart version is pinned to match the Terraform
+# default. The three ClusterPolicies (require-run-as-non-root,
+# disallow-latest-tag, require-resource-limits) live in terraform/ as
+# well — move them here under argocd/apps/ if you adopt this path fully.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: security-kyverno
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/part-of: eks-gitops-blueprint
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.2.6
+    helm:
+      values: |
+        admissionController:
+          replicas: 1
+        backgroundController:
+          replicas: 1
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
