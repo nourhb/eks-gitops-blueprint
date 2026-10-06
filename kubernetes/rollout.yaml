@@ -1,0 +1,92 @@
+# Argo Rollouts canary — progressive delivery alternative to the plain
+# Deployment in deployment.yaml.
+#
+# PREREQUISITE: install the Argo Rollouts controller first, e.g.:
+#   kubectl create namespace argo-rollouts
+#   kubectl apply -n argo-rollouts -f \
+#     https://github.com/argoproj/argo-rollouts/releases/download/v1.6.6/install.yaml
+#
+# HOW TO USE: this file is intentionally NOT applied by default (the plain
+# Deployment in deployment.yaml is the default path, and the Service
+# selector targets the `app.kubernetes.io/name` label which this Rollout
+# also carries, so swapping is safe):
+#   1. Comment out or delete deployment.yaml, then `kubectl apply -f rollout.yaml`
+#      (or let Argo CD sync it — both live under kubernetes/).
+#   2. The CD workflow's tag bump then triggers a canary instead of a
+#      rolling update: 20% of pods get the new image and pause for manual
+#      promotion, then 50% with another pause, then the remaining 100%.
+#   3. Promote or abort from the Argo Rollouts kubectl plugin:
+#        kubectl argo rollouts promote eks-gitops-demo-app -n demo-app
+#        kubectl argo rollouts abort   eks-gitops-demo-app -n demo-app
+#   4. `analysis` steps (e.g. Prometheus queries against /metrics) can be
+#      added inside the `steps` list for fully automated canary analysis.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: eks-gitops-demo-app
+  namespace: demo-app
+spec:
+  replicas: 4
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eks-gitops-demo-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eks-gitops-demo-app
+    spec:
+      # Never run as root, drop all Linux capabilities.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: demo-app
+          # Fill in your account ID once (same value as in deployment.yaml).
+          # The CD workflow rewrites this tag on every release (same sed
+          # pattern as deployment.yaml).
+          image: "<ACCOUNT_ID>.dkr.ecr.ca-central-1.amazonaws.com/blueprint-dev-demo-app:v1.0.0"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  strategy:
+    canary:
+      # Stable service (service.yaml) keeps serving; the canary Service is
+      # optional here — traffic shifting is pod-count based.
+      steps:
+        - setWeight: 20
+        - pause: {}            # manual gate: verify metrics, then promote
+        - setWeight: 50
+        - pause: { duration: 5m } # soak time before full rollout
+        - setWeight: 100
